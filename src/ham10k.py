@@ -19,7 +19,7 @@ PATH_TO_METADATA_FILE = DATA_DIR + "HAM10000_metadata.csv"
 PATH_TO_IMAGES = DATA_DIR + "HAM10000_images/"
 BATCH_SIZE = 64
 VALIDATION_SPLIT = 0.2
-EPOCHS = 1
+EPOCHS = 7
 
 
 def main() -> None:
@@ -157,12 +157,12 @@ def main() -> None:
     # set model optimizer
     optimizer = torch.optim.Adam(model.classifier.parameters(), lr=0.001)
 
-    # create lists to store loss and acc
-    train_loss_list, val_loss_list = [], []
-    train_acc_list, val_acc_list = [], []
-
     # create function to train the nn
+
     def train_model(model, train_loader, val_loader, criterion, optimizer, epochs=EPOCHS):
+        # create lists to store loss and acc
+        train_loss_list, val_loss_list = [], []
+        train_acc_list, val_acc_list = [], []
 
         # message which epoch we are on
         for epoch in range(epochs):
@@ -186,9 +186,6 @@ def main() -> None:
                 # compute loss
                 loss = criterion(outputs, labels)
 
-                # store train loss
-                train_loss_list.append(loss.item())
-
                 # back prop
                 loss.backward()
 
@@ -203,12 +200,16 @@ def main() -> None:
 
                 total += labels.size(0)
 
-                # store train_acc
-                train_acc_list.append((correct / total))
+            # Calculate epoch metrics
+            epoch_train_loss = train_loss / len(train_loader)
+            epoch_train_accuracy = correct / total
 
-            train_accuracy = 100 * correct / total
+            # Store per-epoch metrics
+            train_loss_list.append(epoch_train_loss)
+            train_acc_list.append(epoch_train_accuracy)
+
             print(
-                f"Train Loss: {train_loss/len(train_loader):.4f}, Train Accuracy: {train_accuracy:.2f}%")
+                f"Train Loss: {epoch_train_loss:.4f}, Train Accuracy: {epoch_train_accuracy*100:.2f}%")
 
             # Validation phase
             model.eval()
@@ -220,34 +221,37 @@ def main() -> None:
                     outputs = model(images)
                     loss = criterion(outputs, labels)
 
-                    # store val loss
-                    val_loss_list.append(loss.item())
-
                     val_loss += loss.item()
                     _, predicted = torch.max(outputs, 1)
                     correct += (predicted == labels).sum().item()
                     total += labels.size(0)
-                    # store val_acc
-                    val_acc_list.append(
-                        (correct / total))
+                # Calculate epoch metrics for validation
+                epoch_val_loss = val_loss / len(val_loader)
+                epoch_val_accuracy = correct / total
 
-            val_accuracy = 100 * correct / total
-            print(
-                f"Validation Loss: {val_loss/len(val_loader):.4f}, Validation Accuracy: {val_accuracy:.2f}%\n")
+                # Store per-epoch metrics
+                val_loss_list.append(epoch_val_loss)
+                val_acc_list.append(epoch_val_accuracy)
 
-    train_model(model=model, train_loader=train_dataloader, val_loader=val_dataloader,
-                criterion=criterion, optimizer=optimizer, epochs=EPOCHS)
+                print(
+                    f"Validation Loss: {epoch_val_loss:.4f}, Validation Accuracy: {epoch_val_accuracy*100:.2f}%\n")
+
+        return train_loss_list, train_acc_list, val_loss_list, val_acc_list
+
+    train_loss_list, train_acc_list, val_loss_list, val_acc_list = train_model(model=model, train_loader=train_dataloader, val_loader=val_dataloader,
+                                                                               criterion=criterion, optimizer=optimizer, epochs=EPOCHS)
 
     # make graphs for training
+    epochs = range(1, len(train_loss_list) + 1)
     # acc
-    plt.plot(train_acc_list, label="train_acc")
-    plt.plot(val_acc_list, label="val_acc")
+    plt.plot(epochs, train_acc_list, label="train_acc")
+    plt.plot(epochs, val_acc_list, label="val_acc")
     plt.title("Accuracy")
     plt.savefig("acc.png")
 
     plt.figure()
-    plt.plot(train_loss_list, label="train_loss")
-    plt.plot(val_loss_list, label="val_loss")
+    plt.plot(epochs, train_loss_list, label="train_loss")
+    plt.plot(epochs, val_loss_list, label="val_loss")
     plt.title("Loss")
     plt.savefig("loss.png")
 
