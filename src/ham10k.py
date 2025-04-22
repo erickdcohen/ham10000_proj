@@ -3,49 +3,29 @@ File to train and output CNN for NN project
 """
 import pandas as pd
 import numpy as np
-
-
 import os
 from sklearn.model_selection import train_test_split
-
-
 import matplotlib.pyplot as plt
-
-
-
 import torch
-
-
 from torch.utils.data import Dataset, DataLoader, random_split
-
-
-
 from torchvision.io import read_image
-
-
 from torchvision import transforms, models
-
 
 
 # Constants
 SEED = 4
-DATA_DIR = "../data/ham10k_data/"
+DATA_DIR = "data/ham10k_data/"
 PATH_TO_METADATA_FILE = DATA_DIR + "HAM10000_metadata.csv"
 PATH_TO_IMAGES = DATA_DIR + "HAM10000_images/"
-
-
-BATCH_SIZE = 512
-
-
+BATCH_SIZE = 64
 VALIDATION_SPLIT = 0.2
+EPOCHS = 1
 
-
-EPOCHS = 2
 
 def main() -> None:
     # read in metadata
     metadata_df = pd.read_csv(PATH_TO_METADATA_FILE)
-    
+
     # map label to numeric
     label_map = {
         label: i for i, label in enumerate(metadata_df["dx"].unique())
@@ -60,18 +40,17 @@ def main() -> None:
     test_df, val_df = train_test_split(
         test_df, test_size=0.5, shuffle=True, random_state=SEED
     )
-    
+
     # define transformations
     transform = transforms.Compose([
         transforms.ToPILImage(),
         transforms.Resize((224, 224)),  # Resize to match model input size
         transforms.ToTensor(),  # Convert to tensor
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[
-                            0.5, 0.5, 0.5])  # Normalize
+            0.5, 0.5, 0.5])  # Normalize
     ])
 
     # create dataset class to be used with dataloader one for train and one for test
-
 
     class HAMDataset(Dataset):
         def __init__(self, df, path_to_images=PATH_TO_IMAGES, transform=None):
@@ -102,7 +81,6 @@ def main() -> None:
 
             return image, label
 
-
     # get train dataset
     ham_train_dataset = HAMDataset(
         train_df, transform=transform)
@@ -114,7 +92,6 @@ def main() -> None:
     # get train dataset
     ham_test_dataset = HAMDataset(
         test_df, transform=transform)
-
 
     # create dataloaders
     train_dataloader = DataLoader(
@@ -139,17 +116,16 @@ def main() -> None:
 
         plt.show()
 
-
     # Get a batch of images and labels from the train dataloader
     data_iter = iter(train_dataloader)
     images, labels = next(data_iter)
 
     # Show the images with their corresponding labels
-    show_images(images, labels)
-
+    # show_images(images, labels)
 
     # use transfer learning on pretrained model
-    model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
+    model = models.efficientnet_b0(
+        weights=models.EfficientNet_B0_Weights.DEFAULT)
 
     # get modle number of input features
     num_input_features = model.classifier[1].in_features
@@ -181,6 +157,10 @@ def main() -> None:
     # set model optimizer
     optimizer = torch.optim.Adam(model.classifier.parameters(), lr=0.001)
 
+    # create lists to store loss and acc
+    train_loss_list, val_loss_list = [], []
+    train_acc_list, val_acc_list = [], []
+
     # create function to train the nn
     def train_model(model, train_loader, val_loader, criterion, optimizer, epochs=EPOCHS):
 
@@ -194,7 +174,6 @@ def main() -> None:
 
             for images, labels in train_loader:
                 # move to GPU if available
-                # images, labels = images.to(device), labels.to(device)
                 images = images.to(device)
                 labels = labels.to(device)
 
@@ -206,6 +185,9 @@ def main() -> None:
 
                 # compute loss
                 loss = criterion(outputs, labels)
+
+                # store train loss
+                train_loss_list.append(loss.item())
 
                 # back prop
                 loss.backward()
@@ -221,9 +203,12 @@ def main() -> None:
 
                 total += labels.size(0)
 
+                # store train_acc
+                train_acc_list.append((correct / total))
+
             train_accuracy = 100 * correct / total
             print(
-                f"Train Loss: {train_loss/len(train_loader):.4f}, Accuracy: {train_accuracy:.2f}%")
+                f"Train Loss: {train_loss/len(train_loader):.4f}, Train Accuracy: {train_accuracy:.2f}%")
 
             # Validation phase
             model.eval()
@@ -235,18 +220,36 @@ def main() -> None:
                     outputs = model(images)
                     loss = criterion(outputs, labels)
 
+                    # store val loss
+                    val_loss_list.append(loss.item())
+
                     val_loss += loss.item()
                     _, predicted = torch.max(outputs, 1)
                     correct += (predicted == labels).sum().item()
                     total += labels.size(0)
+                    # store val_acc
+                    val_acc_list.append(
+                        (correct / total))
 
             val_accuracy = 100 * correct / total
             print(
-                f"Validation Loss: {val_loss/len(val_loader):.4f}, Accuracy: {val_accuracy:.2f}%\n")
+                f"Validation Loss: {val_loss/len(val_loader):.4f}, Validation Accuracy: {val_accuracy:.2f}%\n")
 
     train_model(model=model, train_loader=train_dataloader, val_loader=val_dataloader,
                 criterion=criterion, optimizer=optimizer, epochs=EPOCHS)
 
+    # make graphs for training
+    # acc
+    plt.plot(train_acc_list, label="train_acc")
+    plt.plot(val_acc_list, label="val_acc")
+    plt.title("Accuracy")
+    plt.savefig("acc.png")
+
+    plt.figure()
+    plt.plot(train_loss_list, label="train_loss")
+    plt.plot(val_loss_list, label="val_loss")
+    plt.title("Loss")
+    plt.savefig("loss.png")
 
     # Make predictions on test
     model.eval()
@@ -274,7 +277,6 @@ def main() -> None:
 
     output_df.to_csv('../predictions.csv', index=False)
 
-
     def show_predicted_images(images, labels, num_images=5):
         plt.figure(figsize=(12, 6))
 
@@ -286,7 +288,6 @@ def main() -> None:
 
         plt.show()
 
-
     # Get a batch of test images and display predictions
     data_iter = iter(test_dataloader)
     images, _ = next(data_iter)
@@ -294,12 +295,13 @@ def main() -> None:
     _, predicted = torch.max(outputs, 1)
 
     # Display the predicted images
-    show_predicted_images(images, predicted.cpu().numpy())
+    # show_predicted_images(images, predicted.cpu().numpy())
 
     test_df = test_df.reset_index()
     test_df["pred"] = output_df["label"]
 
     sum(test_df["dx"] == test_df["pred"]) / len(test_df["dx"])
+
 
 if __name__ == "__main__":
     main()
